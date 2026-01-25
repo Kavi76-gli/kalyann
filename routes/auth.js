@@ -14,8 +14,8 @@ const { protect } = require("../middleware/auth-middleware");
 const { adminOnly } = require("../middleware/admin-auth-middleware");
 
 // Multer uploads
-const upload = require("../middleware/upload-middleware"); // for screenshots, avatars, deposits
-const uploadQR = require("../middleware/uploadQR");         // for QR payment configs
+const upload = require("../middleware/upload-middleware"); 
+const uploadQR = require("../middleware/uploadQr");
 
 /* =========================
    PUBLIC ROUTES
