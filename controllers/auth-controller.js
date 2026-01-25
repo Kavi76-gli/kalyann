@@ -5,6 +5,7 @@ const Otp = require("../models/Otp");
 const genOtp = require("../utils/genOtp");
 const sendEmail = require("../utils/sendEmail");
 const Wallet = require("../models/wallet");
+const PaymentConfig = require("../models/PaymentConfig");
 
 const fs = require("fs");
 const multer = require("multer");
@@ -1057,7 +1058,7 @@ exports.adminUpdateBalance = async (req, res) => {
 };
 
 
-const PaymentConfig = require("../models/paymentConfig"); // make sure path is correct
+
 
 exports.adminUpdatePayment = async (req, res) => {
   try {
