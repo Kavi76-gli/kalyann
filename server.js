@@ -14,7 +14,7 @@ const app = express();
 const allowedOrigins = [
   "http://127.0.0.1:5500", // VSCode Live Server or local dev
   "http://localhost:5500",  // Alternative localhost
-  "https://your-frontend-domain.com" // Production frontend
+  "https://kalyan-2.onrender.com" // Production frontend
 ];
 
 app.use(cors({
@@ -68,4 +68,4 @@ mongoose
       console.log(`Server running on port ${PORT}`)
     );
   })
-  .catch(err => console.error(err));
+  .catch(err => console.error(err)); 
