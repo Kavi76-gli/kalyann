@@ -12,13 +12,13 @@ const app = express();
 // CORS Configuration
 app.use(cors({
   origin: function(origin, callback) {
-    if (!origin) return callback(null, true); // mobile apps send no origin
-    if (allowedOrigins.includes(origin) || origin === "*") return callback(null, true);
-    return callback(new Error(`CORS policy: ${origin} not allowed`), false);
+    if (!origin) return callback(null, true); // allow requests from APK (no origin)
+    return callback(null, true); // allow all origins
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 }));
+
 
 
 // ⏰ Run daily at 4:01 AM
