@@ -9,15 +9,7 @@ require("dotenv").config();
 
 const app = express();
 
-// ✅ CORS Configuration
-// Allow your frontend origin for development
-const allowedOrigins = [
-  "http://localhost:5500",
-  "http://127.0.0.1:5500",
-  "https://your-frontend-domain.com",
-  "*" // This allows APK / mobile WebView requests
-];
-
+// CORS Configuration
 app.use(cors({
   origin: function(origin, callback) {
     if (!origin) return callback(null, true); // mobile apps send no origin
