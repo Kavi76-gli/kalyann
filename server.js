@@ -12,24 +12,22 @@ const app = express();
 // ✅ CORS Configuration
 // Allow your frontend origin for development
 const allowedOrigins = [
-  "http://127.0.0.1:5500", // VSCode Live Server or local dev
-  "http://localhost:5500",  // Alternative localhost
-  "https://kalyan-2.onrender.com" // Production frontend
+  "http://localhost:5500",
+  "http://127.0.0.1:5500",
+  "https://your-frontend-domain.com",
+  "*" // This allows APK / mobile WebView requests
 ];
 
 app.use(cors({
-  origin: function(origin, callback){
-    // Allow requests with no origin (like Postman)
-    if(!origin) return callback(null, true);
-    if(allowedOrigins.indexOf(origin) === -1){
-      const msg = `CORS policy: ${origin} not allowed`;
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true); // mobile apps send no origin
+    if (allowedOrigins.includes(origin) || origin === "*") return callback(null, true);
+    return callback(new Error(`CORS policy: ${origin} not allowed`), false);
   },
   credentials: true,
-  methods: ["GET","POST","PUT","DELETE","OPTIONS"]
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 }));
+
 
 // ⏰ Run daily at 4:01 AM
 cron.schedule("1 4 * * *", async () => {
