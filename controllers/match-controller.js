@@ -647,7 +647,7 @@ exports.getGameZone = async (req, res) => {
   try {
     const now = new Date();
 
-    // ⏰ CHECK IF TIME IS AFTER 3 AM
+    // ⏰ Check time
     const isAfter3AM = now.getHours() >= 3;
 
     let query = { isActive: true };
@@ -656,22 +656,32 @@ exports.getGameZone = async (req, res) => {
     if (!isAfter3AM) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-
       query.gameDate = today;
     }
-    // ✅ After 3 AM → NO date filter (all active games)
+    // ✅ After 3 AM → all active games (no date filter)
 
     const matches = await Match.find(query).sort({ openTime: 1 });
 
     const games = matches.map(game => {
       let bidStatus = "Upcoming";
+      let openResult = game.openResult || null;
+      let closeResult = game.closeResult || null;
 
-      if (now < game.openTime) {
+      // 🔁 AFTER 3 AM → RESET MODE
+      if (isAfter3AM) {
         bidStatus = "Bids are running (Open)";
-      } else if (now >= game.openTime && now < game.closeTime) {
-        bidStatus = "Bids are running (Close)";
-      } else {
-        bidStatus = "Bids Closed";
+        openResult = "***";
+        closeResult = "***";
+      } 
+      // ⏰ NORMAL FLOW (before 3 AM)
+      else {
+        if (now < game.openTime) {
+          bidStatus = "Upcoming";
+        } else if (now >= game.openTime && now < game.closeTime) {
+          bidStatus = "Bids are running (Open)";
+        } else {
+          bidStatus = "Bids Closed";
+        }
       }
 
       return {
@@ -679,8 +689,8 @@ exports.getGameZone = async (req, res) => {
         gameName: game.gameName,
         openTime: game.openTime,
         closeTime: game.closeTime,
-        openResult: game.openResult || null,
-        closeResult: game.closeResult || null,
+        openResult,
+        closeResult,
         status: game.status,
         bidStatus
       };
@@ -688,7 +698,7 @@ exports.getGameZone = async (req, res) => {
 
     res.json({
       success: true,
-      after3AM: isAfter3AM, // 👈 helpful for frontend
+      after3AM: isAfter3AM,
       games
     });
 

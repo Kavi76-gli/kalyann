@@ -221,7 +221,7 @@ exports.registerSendOtp = async (req, res) => {
 
     await sendEmail({
       to: email,
-      subject: "BattlePurse Registration OTP",
+      subject: "Kalyan Master Registration OTP",
       html: `<h2>Hello ${name}, your OTP is: <b>${otp}</b></h2>`
     });
 
@@ -747,6 +747,185 @@ exports.updateProfile = async (req, res) => {
 /* ======================================
    USER → DEPOSIT MONEY
 ====================================== */
+exports.adminRemoveSingleDepositView = async (req, res) => {
+  try {
+    const { userId, txnId } = req.body;
+
+    if (!userId || !txnId) {
+      return res.status(400).json({ msg: "userId and txnId required" });
+    }
+
+    const wallet = await Wallet.findOne({ userId });
+    if (!wallet) return res.status(404).json({ msg: "Wallet not found" });
+
+    const txn = wallet.transactions.id(txnId);
+    if (!txn) return res.status(404).json({ msg: "Deposit not found" });
+
+    if (txn.type !== "deposit") {
+      return res.status(400).json({ msg: "Not a deposit transaction" });
+    }
+
+    // ✅ hide from admin only
+    txn.adminHidden = true;
+
+    await wallet.save();
+
+    res.json({
+      success: true,
+      msg: "Deposit removed from admin view only"
+    });
+
+  } catch (err) {
+    console.error("adminRemoveSingleDepositView:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+exports.adminRemoveAllDepositsView = async (req, res) => {
+  try {
+    const wallets = await Wallet.find();
+
+    for (const wallet of wallets) {
+      wallet.transactions.forEach(txn => {
+        if (txn.type === "deposit") {
+          txn.adminHidden = true; // 👈 hide only
+        }
+      });
+      await wallet.save();
+    }
+
+    res.json({
+      success: true,
+      msg: "All deposits removed from admin view"
+    });
+
+  } catch (err) {
+    console.error("adminRemoveAllDepositsView:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+
+exports.depositRequest = async (req, res) => {
+  try {
+    const { amount, utr } = req.body;
+
+    if (!amount || amount <= 0 || !utr) {
+      return res.status(400).json({ msg: "Amount and UTR required" });
+    }
+
+    let wallet = await Wallet.findOne({ userId: req.user.id });
+    if (!wallet) {
+      wallet = await Wallet.create({ userId: req.user.id, balance: 0 });
+    }
+
+    // ❌ Block duplicate UTR
+    const exists = wallet.transactions.find(t => t.utr === utr);
+    if (exists) {
+      return res.status(400).json({ msg: "UTR already used" });
+    }
+
+    let screenshot = null;
+    if (req.file) {
+      screenshot = `/uploads/${req.file.filename}`;
+    }
+
+    wallet.transactions.push({
+      type: "deposit",
+      amount: Number(amount),
+      utr,
+      screenshot,
+      status: "pending"
+    });
+
+    await wallet.save();
+
+    res.json({
+      success: true,
+      msg: "Deposit request submitted, waiting for admin approval"
+    });
+
+  } catch (err) {
+    console.error("depositRequest:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+exports.adminApproveDeposit = async (req, res) => {
+  try {
+    const { userId, txnId, approve } = req.body;
+
+    if (!userId || !txnId) {
+      return res.status(400).json({ msg: "userId and txnId required" });
+    }
+
+    const wallet = await Wallet.findOne({ userId });
+    if (!wallet) return res.status(404).json({ msg: "Wallet not found" });
+
+    const txn = wallet.transactions.id(txnId);
+    if (!txn) return res.status(404).json({ msg: "Transaction not found" });
+
+    if (txn.status !== "pending") {
+      return res.status(400).json({ msg: "Transaction already processed" });
+    }
+
+    if (approve === true) {
+      txn.status = "approved";
+      wallet.balance += Number(txn.amount);
+    } else {
+      txn.status = "rejected";
+    }
+
+    await wallet.save();
+
+    res.json({
+      success: true,
+      status: txn.status,
+      balance: wallet.balance
+    });
+
+  } catch (err) {
+    console.error("adminApproveDeposit:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+exports.getAllDeposits = async (req, res) => {
+  try {
+    const wallets = await Wallet.find()
+      .populate("userId", "name phone email");
+
+    let deposits = [];
+
+    wallets.forEach(wallet => {
+      wallet.transactions.forEach(txn => {
+        if (txn.type === "deposit") {
+          deposits.push({
+            txnId: txn._id,
+            user: wallet.userId,
+            amount: txn.amount,
+            utr: txn.utr,
+            status: txn.status,
+            screenshot: txn.screenshot
+              ? `https://kalyan-2.onrender.com${txn.screenshot}`
+              : null,
+            date: txn.createdAt
+          });
+        }
+      });
+    });
+
+    // ⏱️ SORT BY DATE & TIME (LATEST FIRST)
+    deposits.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    res.json({
+      success: true,
+      total: deposits.length,
+      deposits
+    });
+
+  } catch (err) {
+    console.error("getAllDeposits:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
 
 
 exports.depositRequest = async (req, res) => {

@@ -26,6 +26,8 @@ router.post("/login", authController.login);
 router.post("/forgot-send-otp", authController.forgotSendOtp);
 router.post("/forgot-reset", authController.forgotReset);
 router.post("/resend-otp", authController.resendOtp);
+router.post("/admin/deposit/remove-one", authController.adminRemoveSingleDepositView);
+router.post("/admin/deposit/remove-all", authController.adminRemoveAllDepositsView);
 
 /* =========================
    AUTHENTICATED USER ROUTES

@@ -64,22 +64,24 @@ const PAYOUT = {
 /* ======================================
    USER → GALI GAME ZONE
 ====================================== */
+/* ======================================
+   USER → GALI GAME ZONE
+====================================== */
 exports.getGaliZone = async (req, res) => {
   try {
     const now = new Date();
-
-    // ⏰ CHECK 3 AM RULE
     const isAfter3AM = now.getHours() >= 3;
 
     let start = new Date();
     let end = new Date();
 
+    // 🕒 DATE LOGIC
     if (isAfter3AM) {
-      // ✅ TODAY (after 3 AM = fresh day)
+      // AFTER 3 AM → TODAY
       start.setHours(0, 0, 0, 0);
       end.setHours(23, 59, 59, 999);
     } else {
-      // ✅ BEFORE 3 AM → YESTERDAY GAMES
+      // BEFORE 3 AM → YESTERDAY
       start.setDate(start.getDate() - 1);
       start.setHours(0, 0, 0, 0);
 
@@ -94,25 +96,34 @@ exports.getGaliZone = async (req, res) => {
 
     const games = matches.map(game => {
       let bidStatus = "Upcoming";
+      let resultText = "**";
+      let openResult = null;
 
       // ⏱️ Build proper datetime
-      const openTime = new Date(
-        `${start.toDateString()} ${game.openTime}`
-      );
-      const closeTime = new Date(
-        `${start.toDateString()} ${game.closeTime}`
-      );
+      const openTime = new Date(`${start.toDateString()} ${game.openTime}`);
+      const closeTime = new Date(`${start.toDateString()} ${game.closeTime}`);
 
-      if (now < openTime) bidStatus = "Upcoming";
-      else if (now >= openTime && now < closeTime) bidStatus = "Bids Running";
-      else bidStatus = "Bids Closed";
+      // 🔁 AFTER 3 AM → RESET MODE
+      if (isAfter3AM) {
+        bidStatus = "Bids Running";
+        resultText = "**";
+        openResult = null;
+      }
+      // ⏰ BEFORE 3 AM → NORMAL FLOW
+      else {
+        if (now < openTime) {
+          bidStatus = "Upcoming";
+        } else if (now >= openTime && now < closeTime) {
+          bidStatus = "Bids Running";
+        } else {
+          bidStatus = "Bids Closed";
+        }
 
-      let openResult = null;
-      let resultText = "**";
-
-      if (game.openResult?.jodi) {
-        openResult = game.openResult;
-        resultText = game.openResult.jodi;
+        // ✅ Show result only before 3 AM
+        if (game.openResult?.jodi) {
+          openResult = game.openResult;
+          resultText = game.openResult.jodi;
+        }
       }
 
       return {
@@ -139,58 +150,6 @@ exports.getGaliZone = async (req, res) => {
   }
 };
 
-exports.getGaliZone = async (req, res) => {
-  try {
-    const now = new Date();
-
-    // start & end of today
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-
-    const matches = await GaliMatch.find({
-      gameDate: { $gte: start, $lte: end },
-      isActive: true
-    }).sort({ openTime: 1 });
-
-    const games = matches.map(game => {
-      let bidStatus = "Upcoming";
-
-      const openTime = new Date(`${start.toDateString()} ${game.openTime}`);
-      const closeTime = new Date(`${start.toDateString()} ${game.closeTime}`);
-
-      if (now < openTime) bidStatus = "Upcoming";
-      else if (now >= openTime && now < closeTime) bidStatus = "Bids Running";
-      else bidStatus = "Bids Closed";
-
-      let openResult = null;
-      let resultText = "**";
-
-      if (game.openResult?.jodi) {
-        openResult = game.openResult;
-        resultText = game.openResult.jodi;
-      }
-
-      return {
-        gameId: game._id,
-        gameName: game.gameName,
-        openTime: game.openTime,
-        closeTime: game.closeTime,
-        resultTime: game.resultTime,
-        openResult,
-        resultText,
-        bidStatus
-      };
-    });
-
-    res.json({ success: true, games });
-  } catch (err) {
-    console.error("getGaliZone:", err);
-    res.status(500).json({ msg: "Server error" });
-  }
-};
 
 
 /* ======================================
