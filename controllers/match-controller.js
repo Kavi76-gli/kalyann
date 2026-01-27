@@ -75,47 +75,6 @@ exports.createMatch = async (req, res) => {
 
 
 
-exports.createMatch = async (req, res) => {
-  try {
-    const {
-      gameName, gameCode, openTime, closeTime,
-      resultTime, minBet, maxBet, payout, allowedTypes
-    } = req.body;
-
-    if (!gameCode || !openTime || !closeTime || !resultTime) {
-      return res.status(400).json({ msg: "Required fields missing" });
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const exists = await Match.findOne({ gameCode, gameDate: today });
-    if (exists) {
-      return res.status(400).json({ msg: "Game already exists today" });
-    }
-
-    const match = await Match.create({
-      gameName,
-      gameCode,
-      openTime,
-      closeTime,
-      resultTime,
-      minBet,
-      maxBet,
-      payout,
-      allowedTypes,
-      gameDate: today,
-      isActive: true,
-      createdBy: req.user.id
-    });
-
-    res.json({ success: true, match });
-  } catch (err) {
-    console.error("createMatch:", err);
-    res.status(500).json({ msg: "Server error" });
-  }
-};
-
 
 /* ======================================
    ADMIN → GET ALL GAMES
@@ -203,40 +162,54 @@ exports.declareOpenResult = async (req, res) => {
       return res.status(400).json({ msg: "Open result already declared" });
     }
 
-    // ✅ Save open result
+    /* ================= SAVE OPEN RESULT ================= */
     match.openResult = {
       panel: String(panel),
       single: String(single)
     };
     await match.save();
 
-    // ✅ ONLY OPEN SINGLE BETS
+    /* ================= FETCH OPEN BETS ================= */
     const bets = await Bet.find({
       match: matchId,
-      betType: "single",
       betFor: "open",
       isSettled: false
-    });
+    }).populate("user");
 
     let winners = 0;
     let totalWinAmount = 0;
 
     for (const bet of bets) {
+      let winAmount = 0;
       const betNum = String(bet.number);
+      const betType = bet.betType.toLowerCase();
 
-      if (betNum === String(single)) {
-        const winAmount = bet.amount * PAYOUT.single;
+      /* ============ OPEN SINGLE ============ */
+      if (betType === "single" && betNum === String(single)) {
+        winAmount = bet.amount * PAYOUT.single;
+      }
+
+      /* ============ OPEN PANNA ============ */
+      if (
+        ["singlepanna", "doublepanna", "triplepanna"].includes(betType) &&
+        betNum === String(panel)
+      ) {
+        winAmount = bet.amount * PAYOUT[betType];
+      }
+
+      /* ============ SETTLEMENT ============ */
+      if (winAmount > 0) {
         winners++;
         totalWinAmount += winAmount;
 
-        const wallet = await Wallet.findOne({ userId: bet.user });
+        const wallet = await Wallet.findOne({ userId: bet.user._id });
         if (wallet) {
           wallet.balance += winAmount;
           wallet.transactions.push({
             type: "win",
             amount: winAmount,
             status: "approved",
-            remark: "Gali Open Single Win"
+            remark: `OPEN ${bet.betType.toUpperCase()} WIN`
           });
           await wallet.save();
         }
@@ -252,16 +225,16 @@ exports.declareOpenResult = async (req, res) => {
 
     res.json({
       success: true,
-      msg: "Open result declared successfully",
+      msg: "Open result declared & settled",
       winners,
       totalWinAmount
     });
+
   } catch (err) {
     console.error("declareOpenResult error:", err);
     res.status(500).json({ msg: "Server error" });
   }
 };
-
 exports.declareCloseResult = async (req, res) => {
   try {
     const { matchId, panel, single } = req.body;
@@ -273,7 +246,7 @@ exports.declareCloseResult = async (req, res) => {
     const match = await Match.findById(matchId);
     if (!match) return res.status(404).json({ msg: "Match not found" });
 
-    if (!match.openResult?.panel || !match.openResult?.single) {
+    if (!match.openResult?.single) {
       return res.status(400).json({ msg: "Open result not declared yet" });
     }
 
@@ -281,16 +254,22 @@ exports.declareCloseResult = async (req, res) => {
       return res.status(400).json({ msg: "Close result already declared" });
     }
 
-    const openPanel = String(match.openResult.panel);
+    /* ================= RESULT VALUES ================= */
     const openSingle = String(match.openResult.single);
-    const closePanel = String(panel);
+    const openPanel  = String(match.openResult.panel);
     const closeSingle = String(single);
+    const closePanel  = String(panel);
+
     const jodi = openSingle + closeSingle;
 
-    // ✅ Save close result
-    match.closeResult = { panel: closePanel, single: closeSingle };
+    /* ================= SAVE CLOSE RESULT ================= */
+    match.closeResult = {
+      panel: closePanel,
+      single: closeSingle
+    };
     await match.save();
 
+    /* ================= FETCH PENDING BETS ================= */
     const bets = await Bet.find({
       match: matchId,
       isSettled: false
@@ -298,68 +277,56 @@ exports.declareCloseResult = async (req, res) => {
 
     let winners = 0;
     let totalWinAmount = 0;
-    const winnerDetails = [];
-    const walletCache = new Map();
 
     for (const bet of bets) {
+      let winAmount = 0;
       const betNum = String(bet.number);
       const betType = bet.betType.toLowerCase();
-      let winAmount = 0;
 
-      /* ================= SINGLE ================= */
+      /* ============ CLOSE SINGLE ============ */
       if (betType === "single" && bet.betFor === "close") {
         if (betNum === closeSingle) {
           winAmount = bet.amount * PAYOUT.single;
         }
       }
 
-      /* ================= JODI ================= */
-      if (betType === "jodi") {
-        if (betNum === jodi) {
-          winAmount = bet.amount * PAYOUT.jodi;
+      /* ============ JODI ============ */
+      if (betType === "jodi" && betNum === jodi) {
+        winAmount = bet.amount * PAYOUT.jodi;
+      }
+
+      /* ============ PANNA (OPEN OR CLOSE) ============ */
+      if (
+        ["singlepanna", "doublepanna", "triplepanna"].includes(betType)
+      ) {
+        if (betNum === openPanel || betNum === closePanel) {
+          winAmount = bet.amount * PAYOUT[betType];
         }
       }
 
-      /* ================= PANNA ================= */
-      if (betType === "singlepanna" && betNum === closePanel) {
-        winAmount = bet.amount * PAYOUT.singlepanna;
-      }
-
-      if (betType === "doublepanna" && betNum === closePanel) {
-        winAmount = bet.amount * PAYOUT.doublepanna;
-      }
-
-      if (betType === "triplepanna" && betNum === closePanel) {
-        winAmount = bet.amount * PAYOUT.triplepanna;
-      }
-
-      /* ================= HALF SANGAM ================= */
+      /* ============ HALF SANGAM ============ */
       if (betType === "halfsangam") {
-        if (betNum === openPanel + closeSingle) {
+        if (
+          betNum === `${openPanel}-${closeSingle}` ||
+          betNum === `${openSingle}-${closePanel}`
+        ) {
           winAmount = bet.amount * PAYOUT.halfSangam;
         }
       }
 
-      /* ================= FULL SANGAM ================= */
+      /* ============ FULL SANGAM ============ */
       if (betType === "fullsangam") {
-        if (betNum === openPanel + closePanel) {
+        if (betNum === `${openPanel}-${closePanel}`) {
           winAmount = bet.amount * PAYOUT.fullSangam;
         }
       }
 
-      /* ================= SETTLEMENT ================= */
+      /* ============ SETTLEMENT ============ */
       if (winAmount > 0) {
         winners++;
         totalWinAmount += winAmount;
 
-        const userId = bet.user._id.toString();
-        let wallet = walletCache.get(userId);
-
-        if (!wallet) {
-          wallet = await Wallet.findOne({ userId });
-          walletCache.set(userId, wallet);
-        }
-
+        const wallet = await Wallet.findOne({ userId: bet.user._id });
         if (wallet) {
           wallet.balance += winAmount;
           wallet.transactions.push({
@@ -372,13 +339,6 @@ exports.declareCloseResult = async (req, res) => {
         }
 
         bet.resultStatus = "won";
-        winnerDetails.push({
-          user: bet.user.name,
-          phone: bet.user.phone,
-          betType: bet.betType,
-          betNumber: bet.number,
-          amountWon: winAmount
-        });
       } else {
         bet.resultStatus = "lost";
       }
@@ -389,15 +349,12 @@ exports.declareCloseResult = async (req, res) => {
 
     res.json({
       success: true,
-      msg: "Close result declared successfully",
-      openPanel,
+      msg: "Close result declared & all bets settled",
       openSingle,
-      closePanel,
       closeSingle,
       jodi,
       winners,
-      totalWinAmount,
-      winnerDetails
+      totalWinAmount
     });
 
   } catch (err) {

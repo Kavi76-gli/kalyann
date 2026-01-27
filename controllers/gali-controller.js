@@ -59,7 +59,7 @@ exports.createGaliMatch = async (req, res) => {
 ====================================== */
 
 const PAYOUT = {
-  gali: { single: 9, jodi: 90 } // payout multiplier
+  gali: { single: 9.5, jodi: 95 } // payout multiplier
 };
 
 
