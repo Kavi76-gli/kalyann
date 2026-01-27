@@ -7,51 +7,77 @@ const GaliBet = require("../models/GaliBet");
 
 
 
-/* ======================================
-   ADMIN → CREATE GALI MATCH
-====================================== */
-/* ======================================
-   ADMIN → CREATE GALI MATCH (ONE TIME)
-====================================== */
 exports.createGaliMatch = async (req, res) => {
   try {
-    const { gameName, gameCode, openTime, closeTime, resultTime, minBet, maxBet } = req.body;
-
-    if (!gameName || !gameCode || !openTime || !closeTime || !resultTime) {
-      return res.status(400).json({ success: false, msg: "Required fields missing" });
-    }
-
-    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
-    if (!timeRegex.test(openTime) || !timeRegex.test(closeTime) || !timeRegex.test(resultTime)) {
-      return res.status(400).json({ success: false, msg: "Invalid time format (HH:mm)" });
-    }
-
-    // ❌ NO DAILY DATE CHECK
-    const exists = await GaliMatch.findOne({ gameCode });
-    if (exists) {
-      return res.status(400).json({ success: false, msg: "Gali game already exists" });
-    }
-
-    const match = await GaliMatch.create({
+    const {
       gameName,
       gameCode,
       openTime,
-      closeTime,
       resultTime,
-      minBet: minBet ? Number(minBet) : 10,
-      maxBet: maxBet ? Number(maxBet) : 10000,
-      createdBy: req.user.id,
+      minBet = 10,
+      maxBet = 10000,
+      payout,
+      allowedTypes
+    } = req.body;
+
+    // ---------------- BASIC VALIDATION ----------------
+    if (!gameName || !gameCode || !openTime || !resultTime) {
+      return res.status(400).json({ msg: "Required fields missing (gameName, gameCode, openTime, resultTime)" });
+    }
+
+    // ---------------- TIME FORMAT VALIDATION ----------------
+    const timeRegex = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+    if (![openTime, resultTime].every(t => timeRegex.test(t))) {
+      return res.status(400).json({ msg: "Invalid time format (HH:mm)" });
+    }
+
+    // ---------------- DUPLICATE GAME CHECK ----------------
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const exists = await GaliMatch.findOne({
+      gameCode: gameCode.toUpperCase(),
+      gameDate: { $gte: today }
+    });
+    if (exists) {
+      return res.status(400).json({ msg: "Gali game already exists for today (runs daily automatically)" });
+    }
+
+    // ---------------- CREATE GALI GAME ----------------
+    const match = await GaliMatch.create({
+      gameName,
+      gameCode: gameCode.toUpperCase(),
+      openTime,
+      resultTime,
+      minBet: Number(minBet),
+      maxBet: Number(maxBet),
+      payout: { single: 9, jodi: 90, ...payout },
+      allowedTypes: allowedTypes?.length ? allowedTypes : ["single", "jodi"],
+
+      gameDate: today,
       isActive: true,
-      openResult: {},   // reset daily at 3AM
-      resultDeclared: false
+
+      // Initialize open results only
+      openResult: { left: null, right: null, jodi: null },
+
+      createdBy: req.user.id
     });
 
-    res.json({ success: true, match, msg: "Gali game created successfully (Reusable daily)" });
+    res.json({
+      success: true,
+      msg: "Gali game created successfully. Only Open bets allowed. Game will run daily automatically.",
+      match
+    });
+
   } catch (err) {
-    console.error("createGaliMatch:", err);
-    res.status(500).json({ success: false, msg: "Server error" });
+    console.error("createGaliMatch error:", err);
+    res.status(500).json({ msg: "Server error" });
   }
 };
+
+
+
+
 
 
 /* ======================================
@@ -62,36 +88,33 @@ const PAYOUT = {
   gali: { single: 9.5, jodi: 95 } // payout multiplier
 };
 
-
 exports.getGaliZone = async (req, res) => {
   try {
     const now = new Date();
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    const isAfter3AM = currentMinutes >= 180;
+    const isAfter3AM = currentMinutes >= 180; // 3 AM
 
     const matches = await GaliMatch.find({ isActive: true }).sort({ openTime: 1 });
 
     const toMinutes = (time) => {
+      if (!time) return 0; // safeguard
       const [h, m] = time.split(":").map(Number);
       return h * 60 + m;
     };
 
     const games = matches.map(game => {
       const openMin = toMinutes(game.openTime);
-      const closeMin = toMinutes(game.closeTime);
+      const resultMin = toMinutes(game.resultTime);
 
       let bidStatus = "Upcoming";
       let resultText = "**";
       let openResult = null;
 
-      const isNightGame = closeMin < openMin;
-
-      const isOpen =
-        (!isNightGame && currentMinutes >= openMin && currentMinutes < closeMin) ||
-        (isNightGame && (currentMinutes >= openMin || currentMinutes < closeMin));
+      // Bids are open from openTime until resultTime
+      const isOpen = currentMinutes >= openMin && currentMinutes < resultMin;
 
       if (isOpen) bidStatus = "Bids Running";
-      else bidStatus = "Bids Closed";
+      else if (currentMinutes >= resultMin) bidStatus = "Bids Closed";
 
       // 🔁 DAILY RESET AFTER 3 AM
       if (isAfter3AM) {
@@ -108,7 +131,6 @@ exports.getGaliZone = async (req, res) => {
         gameId: game._id,
         gameName: game.gameName,
         openTime: game.openTime,
-        closeTime: game.closeTime,
         resultTime: game.resultTime,
         openResult,
         resultText,
@@ -130,6 +152,10 @@ exports.getGaliZone = async (req, res) => {
 
 
 
+
+/* ======================================
+   ADMIN → DECLARE GALI OPEN RESULT
+====================================== */
 /* ======================================
    ADMIN → DECLARE GALI OPEN RESULT
 ====================================== */
@@ -141,7 +167,7 @@ exports.declareGaliResult = async (req, res) => {
       return res.status(400).json({ msg: "Match ID required" });
     }
 
-    // ✅ validate digits
+    // ✅ validate digits (0–9)
     if (
       left === undefined || right === undefined ||
       isNaN(left) || isNaN(right) ||
@@ -161,15 +187,13 @@ exports.declareGaliResult = async (req, res) => {
     if (match.resultDeclared)
       return res.status(400).json({ msg: "Result already declared" });
 
-    // ✅ Save result
+    // ✅ Save open result only
     match.openResult = { left: l, right: r, jodi };
     match.resultDeclared = true;
     await match.save();
 
-    const bets = await GaliBet.find({
-      match: matchId,
-      isSettled: false
-    }).populate("user");
+    // ---------------- Process bets ----------------
+    const bets = await GaliBet.find({ match: matchId, isSettled: false }).populate("user");
 
     let winners = 0;
     let totalWinAmount = 0;
@@ -194,7 +218,7 @@ exports.declareGaliResult = async (req, res) => {
         }
       }
 
-      // ✅ settle bet (ONE BET → ONE RESULT)
+      // ✅ settle bet
       bet.resultStatus = winAmount > 0 ? "won" : "lost";
       bet.isSettled = true;
       await bet.save();
@@ -237,9 +261,6 @@ exports.declareGaliResult = async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 };
-
-
-
 
 
 

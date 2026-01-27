@@ -26,13 +26,7 @@ const GaliMatchSchema = new mongoose.Schema(
       match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/ // HH:mm
     },
 
-    // ✅ bidding close time
-    closeTime: {
-      type: String,
-      required: true,
-      match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/ // HH:mm
-    },
-
+    
     resultTime: {
       type: String,
       required: true,

@@ -13,45 +13,45 @@ const matchSchema = new mongoose.Schema(
     gameCode: {
       type: String,
       required: true,
+      unique: true,
       index: true
     },
 
     /* ================================
-       📅 GAME DATE (IMPORTANT)
-    ================================ */
-    gameDate: {
-      type: Date,
-      required: true
-    },
-
-    /* ================================
-       ⏰ TIMINGS (FULL DATE OBJECT)
+       ⏰ TIMINGS (HH:mm strings)
+       Supports cross-midnight
     ================================ */
     openTime: {
-  type: String, // "13:25"
-  required: true,
-  match: /^([01]\d|2[0-3]):([0-5]\d)$/ // HH:mm validation
-},
+      type: String, // "22:00"
+      required: true,
+      match: /^([01]\d|2[0-3]):([0-5]\d)$/ // HH:mm validation
+    },
 
-closeTime: {
-  type: String, // "14:27"
-  required: true,
-  match: /^([01]\d|2[0-3]):([0-5]\d)$/
-},
+    closeTime: {
+      type: String, // "01:00"
+      required: true,
+      match: /^([01]\d|2[0-3]):([0-5]\d)$/
+    },
 
+    resultTime: {
+      type: String, // "03:00"
+      required: true,
+      match: /^([01]\d|2[0-3]):([0-5]\d)$/
+    },
 
     /* ================================
        🎯 RESULTS
+       Reset to "***" daily automatically
     ================================ */
-    openResult: {
-      panel: { type: String, default: null },
-      single: { type: Number, default: null }
-    },
+ openResult: {
+  panel: { type: String, default: null },
+  single: { type: Number, default: null } // use Number if single is numeric
+},
+closeResult: {
+  panel: { type: String, default: null },
+  single: { type: Number, default: null }
+},
 
-    closeResult: {
-      panel: { type: String, default: null },
-      single: { type: Number, default: null }
-    },
 
     /* ================================
        🎲 ALLOWED BET TYPES
@@ -67,7 +67,7 @@ closeTime: {
     },
 
     /* ================================
-       💰 PAYOUT MULTIPLIERS
+       💰 PAYOUT MULTIPLIERS (decimals allowed)
     ================================ */
     payout: {
       single: { type: Number, default: 9 },
@@ -116,6 +116,7 @@ closeTime: {
 
     /* ================================
        🔁 DAILY REPLAY
+       Game repeats automatically daily
     ================================ */
     isDailyGame: {
       type: Boolean,
@@ -125,23 +126,13 @@ closeTime: {
     /* ================================
        🔐 PAYOUT SAFETY FLAGS
     ================================ */
-    openPayoutDone: {
-      type: Boolean,
-      default: false
-    },
-
-    closePayoutDone: {
-      type: Boolean,
-      default: false
-    },
+    openPayoutDone: { type: Boolean, default: false },
+    closePayoutDone: { type: Boolean, default: false },
 
     /* ================================
-       🧠 SAFETY
+       🧠 GENERAL FLAGS
     ================================ */
-    isActive: {
-      type: Boolean,
-      default: true
-    }
+    isActive: { type: Boolean, default: true }
   },
   { timestamps: true }
 );
