@@ -90,14 +90,15 @@ const PAYOUT = {
 
 exports.getGaliZone = async (req, res) => {
   try {
-    // IST TIME (SERVER SAFE)
     const now = new Date();
-    const utcMinutes =
-      now.getUTCHours() * 60 + now.getUTCMinutes();
-    const istMinutes = (utcMinutes + 330) % 1440;
 
-    const isAfter3AM = istMinutes >= 180;
+    // ===== IST MINUTES =====
+    const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const istMinutes = (utcMinutes + 330) % 1440; // IST
 
+    const isAfter3AM = istMinutes >= 180; // 03:00 AM
+
+    // ===== FETCH ACTIVE GAMES =====
     const matches = await GaliMatch.find({ isActive: true }).sort({
       openTime: 1
     });
@@ -112,29 +113,18 @@ exports.getGaliZone = async (req, res) => {
       const openMin = toMinutes(game.openTime);
       const resultMin = toMinutes(game.resultTime);
 
-      let bidStatus = "Upcoming";
+      // ===== BID STATUS =====
+      const bidStatus = istMinutes < openMin ? "Bids Running" : "Bids Closed";
+
+      // ===== RESULT TEXT =====
       let resultText = "**";
 
-      // 🕛 BEFORE 3 AM → SHOW RESULT, NO PLAY
-      if (!isAfter3AM) {
-        bidStatus = "Bids Closed";
-
-        if (game.openResult?.jodi) {
-          resultText = game.openResult.jodi;
-        }
-      }
-
-      // 🆕 AFTER 3 AM → NEW DAY STARTS
-      else {
-        resultText = "**";
-
-        if (istMinutes >= openMin && istMinutes < resultMin) {
-          bidStatus = "Bids Running";
-        } else if (istMinutes >= resultMin) {
-          bidStatus = "Bids Closed";
-        } else {
-          bidStatus = "Upcoming";
-        }
+      if (isAfter3AM) {
+        // 🔹 New day → reset all old results
+        resultText = istMinutes >= resultMin && game.openResult?.jodi ? game.openResult.jodi : "**";
+      } else {
+        // 🔹 Before 3 AM → show previous day result if available
+        if (game.openResult?.jodi) resultText = game.openResult.jodi;
       }
 
       return {
@@ -158,8 +148,6 @@ exports.getGaliZone = async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 };
-
-
 
 
 /* ======================================
