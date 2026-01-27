@@ -90,14 +90,20 @@ const PAYOUT = {
 
 exports.getGaliZone = async (req, res) => {
   try {
+    // IST TIME (SERVER SAFE)
     const now = new Date();
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    const isAfter3AM = currentMinutes >= 180; // 3 AM
+    const utcMinutes =
+      now.getUTCHours() * 60 + now.getUTCMinutes();
+    const istMinutes = (utcMinutes + 330) % 1440;
 
-    const matches = await GaliMatch.find({ isActive: true }).sort({ openTime: 1 });
+    const isAfter3AM = istMinutes >= 180;
+
+    const matches = await GaliMatch.find({ isActive: true }).sort({
+      openTime: 1
+    });
 
     const toMinutes = (time) => {
-      if (!time) return 0; // safeguard
+      if (!time) return 0;
       const [h, m] = time.split(":").map(Number);
       return h * 60 + m;
     };
@@ -108,22 +114,26 @@ exports.getGaliZone = async (req, res) => {
 
       let bidStatus = "Upcoming";
       let resultText = "**";
-      let openResult = null;
 
-      // Bids are open from openTime until resultTime
-      const isOpen = currentMinutes >= openMin && currentMinutes < resultMin;
+      // 🕛 BEFORE 3 AM → SHOW RESULT, NO PLAY
+      if (!isAfter3AM) {
+        bidStatus = "Bids Closed";
 
-      if (isOpen) bidStatus = "Bids Running";
-      else if (currentMinutes >= resultMin) bidStatus = "Bids Closed";
-
-      // 🔁 DAILY RESET AFTER 3 AM
-      if (isAfter3AM) {
-        openResult = null;
-        resultText = "**";
-      } else {
         if (game.openResult?.jodi) {
-          openResult = game.openResult;
           resultText = game.openResult.jodi;
+        }
+      }
+
+      // 🆕 AFTER 3 AM → NEW DAY STARTS
+      else {
+        resultText = "**";
+
+        if (istMinutes >= openMin && istMinutes < resultMin) {
+          bidStatus = "Bids Running";
+        } else if (istMinutes >= resultMin) {
+          bidStatus = "Bids Closed";
+        } else {
+          bidStatus = "Upcoming";
         }
       }
 
@@ -132,7 +142,6 @@ exports.getGaliZone = async (req, res) => {
         gameName: game.gameName,
         openTime: game.openTime,
         resultTime: game.resultTime,
-        openResult,
         resultText,
         bidStatus
       };
