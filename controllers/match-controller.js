@@ -5,7 +5,6 @@ const Wallet = require("../models/wallet");
 const GaliMatch = require("../models/GaliMatch");
 
 
-
 exports.createMatch = async (req, res) => {
   try {
     const {
@@ -25,59 +24,25 @@ exports.createMatch = async (req, res) => {
       return res.status(400).json({ msg: "Required fields missing" });
     }
 
-    // ================= TIME FORMAT VALIDATION =================
+    // ================= TIME FORMAT =================
     const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
-
     if (
       !timeRegex.test(openTime) ||
       !timeRegex.test(closeTime) ||
       !timeRegex.test(resultTime)
     ) {
       return res.status(400).json({
-        msg: "Invalid time format (HH:mm only, 00:00–23:59)"
+        msg: "Invalid time format (HH:mm only)"
       });
     }
 
-    // ================= TIME ORDER CHECK =================
-    const toMinutes = (t) => {
-      const [h, m] = t.split(":").map(Number);
-      return h * 60 + m;
-    };
-
-    if (
-      toMinutes(openTime) >= toMinutes(closeTime) ||
-      toMinutes(closeTime) >= toMinutes(resultTime)
-    ) {
-      return res.status(400).json({
-        msg: "Time order must be Open < Close < Result"
-      });
-    }
-
-    // ================= TODAY GAME DATE =================
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const exists = await Match.findOne({
-      gameCode,
-      gameDate: today
-    });
-
+    // ================= DUPLICATE GAME CHECK =================
+    const exists = await Match.findOne({ gameCode });
     if (exists) {
       return res.status(400).json({
-        msg: "Game already created for today"
+        msg: "Game already exists"
       });
     }
-
-    // ================= DEFAULT PAYOUT (MATKA STANDARD) =================
-    const defaultPayout = {
-      single: 9,
-      jodi: 90,
-      singlepanna: 140,
-      doublepanna: 280,
-      triplepanna: 700,
-      halfSangam: 1000,
-      fullSangam: 10000
-    };
 
     // ================= CREATE MATCH =================
     const match = await Match.create({
@@ -88,16 +53,17 @@ exports.createMatch = async (req, res) => {
       resultTime,
       minBet,
       maxBet,
-      payout: { ...defaultPayout, ...payout },
-      allowedTypes: allowedTypes || Object.keys(defaultPayout),
-      gameDate: today,
+      payout: { ...PAYOUT, ...payout },
+      allowedTypes: allowedTypes || Object.keys(PAYOUT),
       isActive: true,
+      openResult: "***",
+      closeResult: "***",
       createdBy: req.user.id
     });
 
     res.json({
       success: true,
-      msg: "Matka game created successfully",
+      msg: "Game created successfully (Reusable daily)",
       match
     });
 
@@ -106,6 +72,7 @@ exports.createMatch = async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 };
+
 
 
 exports.createMatch = async (req, res) => {
@@ -179,11 +146,11 @@ exports.getAllMatches = async (req, res) => {
 
 // ================= NORMAL MATCH =================
 const PAYOUT = {
-  single: 9,
-  jodi: 90,
-  singlepanna: 140,
-  doublepanna: 280,
-  triplepanna: 700,
+  single: 9.5,
+  jodi: 95,
+  singlepanna: 150,
+  doublepanna: 300,
+  triplepanna: 1000,
   halfSangam: 1000,
   fullSangam: 10000
 };
@@ -303,11 +270,10 @@ exports.declareCloseResult = async (req, res) => {
       return res.status(400).json({ msg: "Missing data" });
     }
 
-    const match = await Match.findById(matchId).populate("bets");
+    const match = await Match.findById(matchId);
     if (!match) return res.status(404).json({ msg: "Match not found" });
 
-    // Check open result
-    if (!match.openResult?.single || !match.openResult?.panel) {
+    if (!match.openResult?.panel || !match.openResult?.single) {
       return res.status(400).json({ msg: "Open result not declared yet" });
     }
 
@@ -315,67 +281,97 @@ exports.declareCloseResult = async (req, res) => {
       return res.status(400).json({ msg: "Close result already declared" });
     }
 
+    const openPanel = String(match.openResult.panel);
     const openSingle = String(match.openResult.single);
-    const openPanel  = String(match.openResult.panel);
+    const closePanel = String(panel);
     const closeSingle = String(single);
-    const closePanel  = String(panel);
     const jodi = openSingle + closeSingle;
 
-    // Save close result
+    // ✅ Save close result
     match.closeResult = { panel: closePanel, single: closeSingle };
     await match.save();
 
-    // Fetch unsettled bets
-    const bets = await Bet.find({ match: matchId, isSettled: false }).populate("user");
+    const bets = await Bet.find({
+      match: matchId,
+      isSettled: false
+    }).populate("user");
 
     let winners = 0;
     let totalWinAmount = 0;
     const winnerDetails = [];
+    const walletCache = new Map();
 
     for (const bet of bets) {
       const betNum = String(bet.number);
+      const betType = bet.betType.toLowerCase();
       let winAmount = 0;
 
-      // SINGLE
-      if (bet.betType.toLowerCase() === "single" && bet.betFor === "close") {
-        if (betNum === closeSingle) winAmount = bet.amount * PAYOUT.single;
+      /* ================= SINGLE ================= */
+      if (betType === "single" && bet.betFor === "close") {
+        if (betNum === closeSingle) {
+          winAmount = bet.amount * PAYOUT.single;
+        }
       }
 
-      // JODI
-      if (bet.betType.toLowerCase() === "jodi") {
-        if (betNum === jodi) winAmount = bet.amount * PAYOUT.jodi;
+      /* ================= JODI ================= */
+      if (betType === "jodi") {
+        if (betNum === jodi) {
+          winAmount = bet.amount * PAYOUT.jodi;
+        }
       }
 
-      // HALF SANGAM
-      if (bet.betType.toLowerCase() === "halfsangam") {
-        if (betNum === openPanel + closeSingle) winAmount = bet.amount * PAYOUT.halfSangam;
+      /* ================= PANNA ================= */
+      if (betType === "singlepanna" && betNum === closePanel) {
+        winAmount = bet.amount * PAYOUT.singlepanna;
       }
 
-      // FULL SANGAM
-      if (bet.betType.toLowerCase() === "fullsangam") {
-        if (betNum === openPanel + closePanel) winAmount = bet.amount * PAYOUT.fullSangam;
+      if (betType === "doublepanna" && betNum === closePanel) {
+        winAmount = bet.amount * PAYOUT.doublepanna;
       }
 
+      if (betType === "triplepanna" && betNum === closePanel) {
+        winAmount = bet.amount * PAYOUT.triplepanna;
+      }
+
+      /* ================= HALF SANGAM ================= */
+      if (betType === "halfsangam") {
+        if (betNum === openPanel + closeSingle) {
+          winAmount = bet.amount * PAYOUT.halfSangam;
+        }
+      }
+
+      /* ================= FULL SANGAM ================= */
+      if (betType === "fullsangam") {
+        if (betNum === openPanel + closePanel) {
+          winAmount = bet.amount * PAYOUT.fullSangam;
+        }
+      }
+
+      /* ================= SETTLEMENT ================= */
       if (winAmount > 0) {
         winners++;
         totalWinAmount += winAmount;
 
-        // Update wallet
-        let wallet = await Wallet.findOne({ userId: bet.user._id });
+        const userId = bet.user._id.toString();
+        let wallet = walletCache.get(userId);
+
         if (!wallet) {
-          wallet = new Wallet({ userId: bet.user._id, balance: 0, transactions: [] });
+          wallet = await Wallet.findOne({ userId });
+          walletCache.set(userId, wallet);
         }
-        wallet.balance += winAmount;
-        wallet.transactions.push({
-          type: "win",
-          amount: winAmount,
-          status: "approved",
-          remark: `Gali ${bet.betType} Win`
-        });
-        await wallet.save();
+
+        if (wallet) {
+          wallet.balance += winAmount;
+          wallet.transactions.push({
+            type: "win",
+            amount: winAmount,
+            status: "approved",
+            remark: `${bet.betType.toUpperCase()} WIN`
+          });
+          await wallet.save();
+        }
 
         bet.resultStatus = "won";
-
         winnerDetails.push({
           user: bet.user.name,
           phone: bet.user.phone,
@@ -391,7 +387,6 @@ exports.declareCloseResult = async (req, res) => {
       await bet.save();
     }
 
-    // ✅ Send full data to frontend
     res.json({
       success: true,
       msg: "Close result declared successfully",
@@ -404,6 +399,7 @@ exports.declareCloseResult = async (req, res) => {
       totalWinAmount,
       winnerDetails
     });
+
   } catch (err) {
     console.error("declareCloseResult error:", err);
     res.status(500).json({ msg: "Server error" });
@@ -412,276 +408,50 @@ exports.declareCloseResult = async (req, res) => {
 
 
 
-exports.declareCloseResult = async (req, res) => {
-  try {
-    const { matchId, panel, single } = req.body;
-
-    if (!matchId || panel === undefined || single === undefined) {
-      return res.status(400).json({ msg: "Missing data" });
-    }
-
-    const match = await Match.findById(matchId);
-    if (!match) return res.status(404).json({ msg: "Match not found" });
-
-    if (!match.openResult?.single || !match.openResult?.panel) {
-      return res.status(400).json({ msg: "Open result not declared yet" });
-    }
-
-    if (match.closeResult?.single) {
-      return res.status(400).json({ msg: "Close result already declared" });
-    }
-
-    const openSingle = String(match.openResult.single);
-    const openPanel  = String(match.openResult.panel);
-    const closeSingle = String(single);
-    const closePanel  = String(panel);
-
-    const jodi = openSingle + closeSingle;
-
-    // ✅ Save close result
-    match.closeResult = {
-      panel: closePanel,
-      single: closeSingle
-    };
-    await match.save();
-
-    const bets = await Bet.find({
-      match: matchId,
-      isSettled: false
-    });
-
-    let winners = 0;
-    let totalWinAmount = 0;
-
-    for (const bet of bets) {
-      const betNum = String(bet.number);
-      let winAmount = 0;
-
-      // ✅ CLOSE SINGLE
-      if (bet.betType === "single" && bet.betFor === "close") {
-        if (betNum === closeSingle) {
-          winAmount = bet.amount * PAYOUT.single;
-        }
-      }
-
-      // ✅ JODI
-      else if (bet.betType === "jodi") {
-        if (betNum === jodi) {
-          winAmount = bet.amount * PAYOUT.jodi;
-        }
-      }
-
-      // ✅ HALF SANGAM
-      else if (bet.betType === "halfSangam") {
-        if (betNum === openPanel + closeSingle) {
-          winAmount = bet.amount * PAYOUT.halfSangam;
-        }
-      }
-
-      // ✅ FULL SANGAM
-      else if (bet.betType === "fullSangam") {
-        if (betNum === openPanel + closePanel) {
-          winAmount = bet.amount * PAYOUT.fullSangam;
-        }
-      }
-
-      if (winAmount > 0) {
-        winners++;
-        totalWinAmount += winAmount;
-
-        const wallet = await Wallet.findOne({ userId: bet.user });
-        if (wallet) {
-          wallet.balance += winAmount;
-          wallet.transactions.push({
-            type: "win",
-            amount: winAmount,
-            status: "approved",
-            remark: `Gali ${bet.betType} Win`
-          });
-          await wallet.save();
-        }
-
-        bet.resultStatus = "won";
-      } else {
-        bet.resultStatus = "lost";
-      }
-
-      bet.isSettled = true;
-      await bet.save();
-    }
-
-    res.json({
-      success: true,
-      msg: "Close result declared successfully",
-      jodi,
-      winners,
-      totalWinAmount
-    });
-  } catch (err) {
-    console.error("declareCloseResult error:", err);
-    res.status(500).json({ msg: "Server error" });
-  }
-};
-
-// ---------------- OPEN RESULT ----------------
-exports.declareOpenResult = async (req, res) => {
-  try {
-    const { matchId, panel, single } = req.body;
-    if (!matchId || !panel || single === undefined)
-      return res.status(400).json({ message: "Missing data" });
-
-    const match = await Match.findById(matchId);
-    if (!match) return res.status(404).json({ message: "Match not found" });
-    if (match.openResult?.panel)
-      return res.status(400).json({ message: "Open result already declared" });
-
-    match.openResult = { panel: String(panel), single: String(single) };
-    await match.save();
-
-    const bets = await Bet.find({ match: matchId, betFor: "open", isSettled: false });
-    let winners = 0, totalWinAmount = 0;
-
-    for (const bet of bets) {
-      if (!PAYOUT[bet.betType]) continue;
-
-      const win = isWinner(bet.betType, bet.number, panel, single);
-
-      if (win) {
-        const winAmount = bet.amount * PAYOUT[bet.betType];
-        totalWinAmount += winAmount;
-        winners++;
-
-        const wallet = await Wallet.findOne({ userId: bet.user });
-        if (wallet) {
-          wallet.balance += winAmount;
-          wallet.transactions.push({
-            type: "admin_update",
-            amount: winAmount,
-            status: "approved",
-            remark: `Winning for ${bet.betType} open`
-          });
-          await wallet.save();
-        }
-
-        bet.resultStatus = "won";
-      } else {
-        bet.resultStatus = "lost";
-      }
-
-      bet.isSettled = true;
-      await bet.save();
-    }
-
-    match.openPayoutDone = true;
-    await match.save();
-
-    res.json({ message: "Open result declared", winners, totalWinAmount });
-  } catch (err) {
-    console.error("Open Result Error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
-
-// ---------------- CLOSE RESULT ----------------
-exports.declareCloseResult = async (req, res) => {
-  try {
-    const { matchId, panel, single } = req.body;
-    if (!matchId || !panel || single === undefined)
-      return res.status(400).json({ message: "Missing data" });
-
-    const match = await Match.findById(matchId);
-    if (!match) return res.status(404).json({ message: "Match not found" });
-    if (match.closeResult?.panel)
-      return res.status(400).json({ message: "Close result already declared" });
-
-    match.closeResult = { panel: String(panel), single: String(single) };
-    await match.save();
-
-    const openPanel = match.openResult?.panel || "";
-
-    const bets = await Bet.find({ match: matchId, betFor: "close", isSettled: false });
-    let winners = 0, totalWinAmount = 0;
-
-    for (const bet of bets) {
-      if (!PAYOUT[bet.betType]) continue;
-
-      const win = isWinner(bet.betType, bet.number, panel, single, openPanel);
-
-      if (win) {
-        const winAmount = bet.amount * PAYOUT[bet.betType];
-        totalWinAmount += winAmount;
-        winners++;
-
-        const wallet = await Wallet.findOne({ userId: bet.user });
-        if (wallet) {
-          wallet.balance += winAmount;
-          wallet.transactions.push({
-            type: "admin_update",
-            amount: winAmount,
-            status: "approved",
-            remark: `Winning for ${bet.betType} close`
-          });
-          await wallet.save();
-        }
-
-        bet.resultStatus = "won";
-      } else {
-        bet.resultStatus = "lost";
-      }
-
-      bet.isSettled = true;
-      await bet.save();
-    }
-
-    match.closePayoutDone = true;
-    await match.save();
-
-    res.json({ message: "Close result declared", winners, totalWinAmount });
-  } catch (err) {
-    console.error("Close Result Error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-};
 
 exports.getGameZone = async (req, res) => {
   try {
     const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-    // ⏰ Check time
-    const isAfter3AM = now.getHours() >= 3;
+    const isAfter3AM = currentMinutes >= 180; // 3 * 60
 
-    let query = { isActive: true };
+    const matches = await Match.find({ isActive: true }).sort({ openTime: 1 });
 
-    // ❌ Before 3 AM → only TODAY games
-    if (!isAfter3AM) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      query.gameDate = today;
-    }
-    // ✅ After 3 AM → all active games (no date filter)
-
-    const matches = await Match.find(query).sort({ openTime: 1 });
+    const toMinutes = (time) => {
+      const [h, m] = time.split(":").map(Number);
+      return h * 60 + m;
+    };
 
     const games = matches.map(game => {
-      let bidStatus = "Upcoming";
-      let openResult = game.openResult || null;
-      let closeResult = game.closeResult || null;
+      const openMin = toMinutes(game.openTime);
+      const closeMin = toMinutes(game.closeTime);
 
-      // 🔁 AFTER 3 AM → RESET MODE
-      if (isAfter3AM) {
+      let bidStatus = "Upcoming";
+
+      // 🌙 Cross-midnight game
+      const isNightGame = closeMin < openMin;
+
+      const isOpen =
+        (!isNightGame && currentMinutes >= openMin && currentMinutes < closeMin) ||
+        (isNightGame && (currentMinutes >= openMin || currentMinutes < closeMin));
+
+      if (isOpen) {
         bidStatus = "Bids are running (Open)";
+      } else if (
+        (!isNightGame && currentMinutes >= closeMin) ||
+        (isNightGame && currentMinutes >= closeMin && currentMinutes < openMin)
+      ) {
+        bidStatus = "Bids Closed";
+      }
+
+      // 🔁 3 AM RESET
+      let openResult = game.openResult;
+      let closeResult = game.closeResult;
+
+      if (isAfter3AM) {
         openResult = "***";
         closeResult = "***";
-      } 
-      // ⏰ NORMAL FLOW (before 3 AM)
-      else {
-        if (now < game.openTime) {
-          bidStatus = "Upcoming";
-        } else if (now >= game.openTime && now < game.closeTime) {
-          bidStatus = "Bids are running (Open)";
-        } else {
-          bidStatus = "Bids Closed";
-        }
       }
 
       return {
@@ -691,7 +461,6 @@ exports.getGameZone = async (req, res) => {
         closeTime: game.closeTime,
         openResult,
         closeResult,
-        status: game.status,
         bidStatus
       };
     });
@@ -703,11 +472,10 @@ exports.getGameZone = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("getGameZone:", err);
+    console.error("getGameZone error:", err);
     res.status(500).json({ msg: "Server error" });
   }
 };
-
 
 exports.getGameZone = async (req, res) => {
   try {
