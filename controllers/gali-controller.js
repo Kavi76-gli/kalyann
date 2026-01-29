@@ -92,16 +92,10 @@ exports.getGaliZone = async (req, res) => {
   try {
     const now = new Date();
 
-    // ===== IST MINUTES =====
+    // ===== IST TIME =====
     const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
     const istMinutes = (utcMinutes + 330) % 1440; // IST
-
-    const isAfter3AM = istMinutes >= 180; // 03:00 AM
-
-    // ===== FETCH ACTIVE GAMES =====
-    const matches = await GaliMatch.find({ isActive: true }).sort({
-      openTime: 1
-    });
+    const isAfter3AM = istMinutes >= 180;
 
     const toMinutes = (time) => {
       if (!time) return 0;
@@ -109,22 +103,34 @@ exports.getGaliZone = async (req, res) => {
       return h * 60 + m;
     };
 
+    const matches = await GaliMatch.find({ isActive: true }).sort({
+      openTime: 1
+    });
+
     const games = matches.map(game => {
       const openMin = toMinutes(game.openTime);
       const resultMin = toMinutes(game.resultTime);
 
-      // ===== BID STATUS =====
-      const bidStatus = istMinutes < openMin ? "Bids Running" : "Bids Closed";
+      // ===== BID STATUS (CORRECT) =====
+      let bidStatus = "Bids Closed";
 
-      // ===== RESULT TEXT =====
+      if (istMinutes < openMin) {
+        bidStatus = "Open & Close Bids Running";
+      } else if (istMinutes >= openMin && istMinutes < resultMin) {
+        bidStatus = "Close Bids Running";
+      }
+
+      // ===== RESULT TEXT (RESET SAFE) =====
       let resultText = "**";
 
-      if (isAfter3AM) {
-        // 🔹 New day → reset all old results
-        resultText = istMinutes >= resultMin && game.openResult?.jodi ? game.openResult.jodi : "**";
-      } else {
-        // 🔹 Before 3 AM → show previous day result if available
-        if (game.openResult?.jodi) resultText = game.openResult.jodi;
+      if (!isAfter3AM && game.openResult?.jodi) {
+        // Before 3 AM → show yesterday result
+        resultText = game.openResult.jodi;
+      }
+
+      if (isAfter3AM && istMinutes >= resultMin && game.openResult?.jodi) {
+        // After result time today
+        resultText = game.openResult.jodi;
       }
 
       return {
@@ -132,8 +138,8 @@ exports.getGaliZone = async (req, res) => {
         gameName: game.gameName,
         openTime: game.openTime,
         resultTime: game.resultTime,
-        resultText,
-        bidStatus
+        bidStatus,
+        resultText
       };
     });
 
@@ -148,6 +154,7 @@ exports.getGaliZone = async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 };
+
 
 
 /* ======================================

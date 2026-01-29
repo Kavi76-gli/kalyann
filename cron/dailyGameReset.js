@@ -1,36 +1,25 @@
 const cron = require("node-cron");
 const Match = require("../models/Match");
+const GaliMatch = require("../models/GaliMatch");
 
-// ================= DAILY RESET @ 3:00 AM IST =================
-cron.schedule(
-  "0 3 * * *",
-  async () => {
-    try {
-      console.log("🕒 Daily Matka reset started...");
+const GaliBet = require("../models/GaliBet");
 
-      const result = await Match.updateMany(
-        {},
-        {
-          $set: {
-            openResult: "***",
-            closeResult: "***",
-            isOpenResultDeclared: false,
-            isCloseResultDeclared: false,
-            updatedAt: new Date()
-          }
-        }
-      );
+cron.schedule("0 3 * * *", async () => {
+  console.log("⏰ 3 AM Result Reset Started");
 
-      console.log(
-        `✅ Daily reset completed. Games reset: ${result.modifiedCount}`
-      );
-    } catch (err) {
-      console.error("❌ Daily reset failed:", err);
+  await Match.updateMany(
+    {},
+    {
+      $set: {
+        openResult: null,
+        closeResult: null,
+        openPayoutDone: false,
+        closePayoutDone: false
+      }
     }
-  },
-  {
-    timezone: "Asia/Kolkata"
-  }
-);
+  );
 
-module.exports = {};
+  console.log("✅ Results reset completed");
+}, {
+  timezone: "Asia/Kolkata"
+});
