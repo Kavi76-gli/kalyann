@@ -189,86 +189,6 @@ exports.verifyEmailOtp = async (req, res) => {
   }
 };
 
-exports.registerSendOtp = async (req, res) => {
-  try {
-    const { name, phone, email, password, confirmPassword } = req.body;
-
-    if (!name || !phone || !email || !password || !confirmPassword)
-      return res.status(400).json({ msg: "All fields required" });
-
-    if (password !== confirmPassword)
-      return res.status(400).json({ msg: "Passwords do not match" });
-
-    const exists = await User.findOne({ $or: [{ phone }, { email }] });
-    if (exists)
-      return res.status(400).json({ msg: "User already exists" });
-
-    const otp = genOtp();
-
-    // remove previous OTPs for this email
-    await Otp.deleteMany({ email, purpose: "register" });
-
-    // save OTP along with user info and password
-    await Otp.create({
-      name,
-      phone,
-      email,
-      password, // store temporarily
-      otp,
-      purpose: "register",
-      expiresAt: new Date(Date.now() + 5 * 60 * 1000) // 5 minutes
-    });
-
-    await sendEmail({
-      to: email,
-      subject: "Kalyan Master Registration OTP",
-      html: `<h2>Hello ${name}, your OTP is: <b>${otp}</b></h2>`
-    });
-
-    res.json({ success: true, msg: "OTP sent to your email" });
-  } catch (err) {
-    console.error("registerSendOtp:", err);
-    res.status(500).json({ msg: "Failed to send OTP" });
-  }
-};
-
-/* ======================================
-   VERIFY EMAIL OTP → CREATE USER
-====================================== */
-exports.verifyEmailOtp = async (req, res) => {
-  try {
-    const { email, otp } = req.body;
-
-    if (!email || !otp)
-      return res.status(400).json({ msg: "Email and OTP required" });
-
-    const record = await Otp.findOne({ email, otp, purpose: "register" });
-
-    if (!record || record.expiresAt < Date.now())
-      return res.status(400).json({ msg: "Invalid or expired OTP" });
-
-    if (!record.password)
-      return res.status(400).json({
-        msg: "Session expired. Please register again."
-      });
-
-    const hashedPassword = await bcrypt.hash(record.password, 10);
-
-    await User.create({
-      name: record.name,
-      phone: record.phone,
-      email: record.email,
-      password: hashedPassword
-    });
-
-    await Otp.deleteMany({ email, purpose: "register" });
-
-    res.json({ success: true, msg: "Registration successful" });
-  } catch (err) {
-    console.error("verifyEmailOtp:", err);
-    res.status(500).json({ msg: "OTP verification failed" });
-  }
-};
 
 /* ======================================
    LOGIN
@@ -1462,3 +1382,28 @@ exports.getMyReferrals = async (req, res) => {
     res.status(500).json({ success: false, msg: "Server error" });
   }
 };
+// authController.js
+
+// controllers/authController.js
+
+
+// authController.js
+exports.referralRedirect = (req, res) => {
+  const code = req.params.code;
+
+  // Only allow alphanumeric codes (adjust regex if needed)
+  if (!/^[A-Z0-9]+$/.test(code)) {
+    return res.status(404).send("Invalid referral code");
+  }
+
+  console.log("Referral code:", code);
+
+  const filePath = path.join(__dirname, "../../frontend/public/auth.html");
+  res.sendFile(filePath, err => {
+    if (err) {
+      console.error("Error sending auth.html:", err);
+      res.status(404).send("Page not found");
+    }
+  });
+};
+

@@ -1,25 +1,59 @@
 const cron = require("node-cron");
+
 const Match = require("../models/Match");
 const GaliMatch = require("../models/GaliMatch");
 
-const GaliBet = require("../models/GaliBet");
+// ================================
+// ⏰ DAILY RESET @ 03:00 AM IST
+// ================================
+cron.schedule(
+  "0 3 * * *",
+  async () => {
+    try {
+      console.log("⏰ 3 AM RESULT RESET STARTED");
 
-cron.schedule("0 3 * * *", async () => {
-  console.log("⏰ 3 AM Result Reset Started");
+      // 🔁 NORMAL MATCH RESET
+      await Match.updateMany(
+        {},
+        {
+          $unset: {
+            openResult: "",
+            closeResult: ""
+          },
+          $set: {
+            openPayoutDone: false,
+            closePayoutDone: false
+          }
+        }
+      );
 
-  await Match.updateMany(
-    {},
-    {
-      $set: {
-        openResult: null,
-        closeResult: null,
-        openPayoutDone: false,
-        closePayoutDone: false
-      }
+      // 🔁 GALI MATCH RESET
+      await GaliMatch.updateMany(
+        {},
+        {
+          $unset: {
+            openResult: ""
+          },
+          $set: {
+            resultDeclared: false
+          }
+        }
+      );
+
+      console.log("✅ ALL RESULTS RESET SUCCESSFULLY");
+
+    } catch (err) {
+      console.error("❌ CRON RESET ERROR:", err);
     }
-  );
+  },
+  {
+    timezone: "Asia/Kolkata"
+  }
+);
 
-  console.log("✅ Results reset completed");
-}, {
-  timezone: "Asia/Kolkata"
+// ================================
+// 🔥 TEST CRON (OPTIONAL – DEV ONLY)
+// ================================
+cron.schedule("* * * * *", () => {
+  console.log("🔥 CRON HEARTBEAT OK");
 });

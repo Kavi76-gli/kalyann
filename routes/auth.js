@@ -145,3 +145,6 @@ router.get("/me", auth, authController.getMe);
 module.exports = router;
 
 router.get("/my-referrals", auth, authController.getMyReferrals);
+
+// Route for /ref/:code
+router.get("/ref/:code", authController.referralRedirect);

@@ -7,8 +7,10 @@ const {
   getGameZone,
   declareOpenResult,
   declareCloseResult,
+   resetMatchResult,
   deleteMatch,
-  getSingleGame
+  getSingleGame,
+   resetAllMatchResults
 } = require("../controllers/match-controller");
 
 const { auth, adminOnly } = require("../middleware/admin-auth-middleware");
@@ -28,6 +30,16 @@ router.get("/admin/all", auth, adminOnly, getAllMatches);
 ====================================== */
 router.post("/admin/result/open", auth, adminOnly, declareOpenResult);
 router.post("/admin/result/close", auth, adminOnly, declareCloseResult);
+// ===============================
+// 🔁 RESET SINGLE MATCH (ADMIN)
+// ===============================
+router.post(
+  "/reset",
+  auth,
+  adminOnly,
+  resetMatchResult
+);
+router.post("/reset-all", auth, adminOnly, resetAllMatchResults);
 
 /* ======================================
    USER → GAMEZONE

@@ -379,6 +379,55 @@ exports.declareCloseResult = async (req, res) => {
 };
 
 
+exports.resetMatchResult = async (req, res) => {
+  try {
+    const { matchId } = req.body;
+
+    if (!matchId) {
+      return res.status(400).json({ msg: "Match ID required" });
+    }
+
+    const match = await Match.findById(matchId);
+    if (!match) return res.status(404).json({ msg: "Match not found" });
+
+    match.openResult = undefined;
+    match.closeResult = undefined;
+    match.openPayoutDone = false;
+    match.closePayoutDone = false;
+
+    await match.save();
+
+    res.json({
+      success: true,
+      msg: "Match result reset successfully"
+    });
+
+  } catch (err) {
+    console.error("resetMatchResult error:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+exports.resetAllMatchResults = async () => {
+  try {
+    await Match.updateMany(
+      {},
+      {
+        $unset: {
+          openResult: "",
+          closeResult: ""
+        },
+        $set: {
+          openPayoutDone: false,
+          closePayoutDone: false
+        }
+      }
+    );
+
+    console.log("✅ ALL MATCH RESULTS RESET");
+  } catch (err) {
+    console.error("❌ resetAllMatchResults error:", err);
+  }
+};
 
 
 

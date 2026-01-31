@@ -36,10 +36,15 @@ app.use(express.static(path.join(__dirname, "frontend/public")));
 // Serve uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
+// server.js
+const authRoutes = require("./routes/auth");
+app.use("/", authRoutes); // referral route registered AFTER static
+
 // Routes
 app.get("/", (req, res) => {
-  res.send("Number App Backend Running 🚀");
+  res.sendFile(path.join(__dirname, "frontend/public/auth.html"));
 });
+
 
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/match", require("./routes/match"));

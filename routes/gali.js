@@ -8,6 +8,7 @@ const {
   getSingleGali,
   deleteGaliMatch,
   declareGaliResult,
+  resetGaliResult,
   getGaliBetsSummary,
   getGaliBetsByMatch
 } = require("../controllers/gali-controller");
@@ -58,6 +59,16 @@ router.post(
   auth,
   adminOnly,
   declareGaliResult
+);
+
+// ===============================
+// 🔁 RESET SINGLE GALI MATCH
+// ===============================
+router.post(
+  "/reset",
+  auth,
+  adminOnly,
+  resetGaliResult
 );
 
 /* ======================================

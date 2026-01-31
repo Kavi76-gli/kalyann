@@ -267,6 +267,37 @@ exports.declareGaliResult = async (req, res) => {
 };
 
 
+const mongoose = require("mongoose");
+
+exports.resetGaliResult = async (req, res) => {
+  try {
+    const { matchId } = req.body;
+
+    if (!matchId || !mongoose.Types.ObjectId.isValid(matchId)) {
+      return res.status(400).json({ msg: "Invalid Gali Match ID" });
+    }
+
+    const match = await GaliMatch.findById(matchId);
+    if (!match) {
+      return res.status(404).json({ msg: "Gali match not found" });
+    }
+
+    match.openResult = null;
+    match.resultDeclared = false;
+    await match.save();
+
+    await GaliBet.updateMany(
+      { match: matchId },
+      { $set: { isSettled: false, resultStatus: "pending" } }
+    );
+
+    res.json({ success: true, msg: "Gali result reset successfully" });
+
+  } catch (err) {
+    console.error("resetGaliResult error:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
 
 /* ======================================
    ADMIN → GET GALI BETS SUMMARY
