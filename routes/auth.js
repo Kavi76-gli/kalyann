@@ -26,8 +26,6 @@ router.post("/login", authController.login);
 router.post("/forgot-send-otp", authController.forgotSendOtp);
 router.post("/forgot-reset", authController.forgotReset);
 router.post("/resend-otp", authController.resendOtp);
-router.post("/admin/deposit/remove-one", authController.adminRemoveSingleDepositView);
-router.post("/admin/deposit/remove-all", authController.adminRemoveAllDepositsView);
 
 /* =========================
    AUTHENTICATED USER ROUTES
@@ -148,3 +146,26 @@ router.get("/my-referrals", auth, authController.getMyReferrals);
 
 // Route for /ref/:code
 router.get("/ref/:code", authController.referralRedirect);
+
+
+
+// DELETE single deposit
+router.delete("/admin/deposit/:id", auth, adminOnly, authController.deleteSingleDeposit);
+
+// DELETE all deposits
+router.delete("/admin/deposits", auth, adminOnly, authController.deleteAllDeposits);
+// 🔹 Hide single deposit from admin table
+router.post(
+  "/admin/deposit/hide",
+  auth,
+  adminOnly,
+  authController.hideSingleDepositAdminView
+);
+
+// 🔹 Hide all deposits from admin table
+router.post(
+  "/admin/deposits/hide-all",
+  auth,
+  adminOnly,
+  authController.hideAllDepositsAdminView
+);

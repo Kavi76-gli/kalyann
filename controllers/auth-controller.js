@@ -664,65 +664,108 @@ exports.updateProfile = async (req, res) => {
   }
 };  
 
+
+
+
 /* ======================================
-   USER → DEPOSIT MONEY
+   DELETE SINGLE DEPOSIT PERMANENTLY
 ====================================== */
-exports.adminRemoveSingleDepositView = async (req, res) => {
+// controllers/authController.js
+
+// HIDE single deposit from admin view
+exports.hideSingleDepositAdminView = async (req, res) => {
   try {
-    const { userId, txnId } = req.body;
+    const { userId, txnId } = req.body; // note: use body, not params
 
     if (!userId || !txnId) {
-      return res.status(400).json({ msg: "userId and txnId required" });
+      return res.status(400).json({ success: false, msg: "userId and txnId required" });
     }
 
     const wallet = await Wallet.findOne({ userId });
-    if (!wallet) return res.status(404).json({ msg: "Wallet not found" });
+    if (!wallet) return res.status(404).json({ success: false, msg: "Wallet not found" });
 
     const txn = wallet.transactions.id(txnId);
-    if (!txn) return res.status(404).json({ msg: "Deposit not found" });
-
-    if (txn.type !== "deposit") {
-      return res.status(400).json({ msg: "Not a deposit transaction" });
+    if (!txn || txn.type !== "deposit") {
+      return res.status(404).json({ success: false, msg: "Deposit not found" });
     }
 
-    // ✅ hide from admin only
+    // ✅ Hide from admin only
     txn.adminHidden = true;
-
     await wallet.save();
 
-    res.json({
-      success: true,
-      msg: "Deposit removed from admin view only"
-    });
+    res.json({ success: true, msg: "Deposit hidden from admin view" });
 
   } catch (err) {
-    console.error("adminRemoveSingleDepositView:", err);
-    res.status(500).json({ msg: "Server error" });
+    console.error("hideSingleDepositAdminView:", err);
+    res.status(500).json({ success: false, msg: "Server error" });
   }
 };
-exports.adminRemoveAllDepositsView = async (req, res) => {
+
+// HIDE all deposits from admin view
+exports.hideAllDepositsAdminView = async (req, res) => {
   try {
     const wallets = await Wallet.find();
 
     for (const wallet of wallets) {
       wallet.transactions.forEach(txn => {
-        if (txn.type === "deposit") {
-          txn.adminHidden = true; // 👈 hide only
-        }
+        if (txn.type === "deposit") txn.adminHidden = true;
       });
       await wallet.save();
     }
 
-    res.json({
-      success: true,
-      msg: "All deposits removed from admin view"
-    });
+    res.json({ success: true, msg: "All deposits hidden from admin view" });
 
   } catch (err) {
-    console.error("adminRemoveAllDepositsView:", err);
-    res.status(500).json({ msg: "Server error" });
+    console.error("hideAllDepositsAdminView:", err);
+    res.status(500).json({ success: false, msg: "Server error" });
   }
 };
+
+
+// DELETE single deposit permanently
+exports.deleteSingleDeposit = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const wallets = await Wallet.find();
+    let found = false;
+
+    for (const wallet of wallets) {
+      const txn = wallet.transactions.id(id);
+      if (txn && txn.type === "deposit") {
+        txn.remove(); // permanently delete
+        await wallet.save();
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) return res.status(404).json({ success: false, msg: "Deposit not found" });
+
+    res.json({ success: true, msg: "Deposit deleted successfully" });
+  } catch (err) {
+    console.error("deleteSingleDeposit:", err);
+    res.status(500).json({ success: false, msg: "Server error" });
+  }
+};
+
+// DELETE all deposits permanently
+exports.deleteAllDeposits = async (req, res) => {
+  try {
+    const wallets = await Wallet.find();
+
+    for (const wallet of wallets) {
+      wallet.transactions = wallet.transactions.filter(txn => txn.type !== "deposit");
+      await wallet.save();
+    }
+
+    res.json({ success: true, msg: "All deposits deleted successfully" });
+  } catch (err) {
+    console.error("deleteAllDeposits:", err);
+    res.status(500).json({ success: false, msg: "Server error" });
+  }
+};
+
 
 
 exports.depositRequest = async (req, res) => {
@@ -769,37 +812,56 @@ exports.depositRequest = async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 };
+/* ======================================
+   ADMIN → APPROVE / REJECT DEPOSIT
+====================================== */
 exports.adminApproveDeposit = async (req, res) => {
   try {
-    const { userId, txnId, approve } = req.body;
+    // ✅ Ensure request body exists
+    if (!req.body) {
+      return res.status(400).json({ msg: "Request body missing" });
+    }
 
+    let { userId, txnId, approve } = req.body;
+
+    // ✅ Validate IDs
     if (!userId || !txnId) {
       return res.status(400).json({ msg: "userId and txnId required" });
     }
 
+    // Ensure approve is boolean
+    approve = (approve === true || approve === "true");
+
+    // ✅ Find wallet by userId
     const wallet = await Wallet.findOne({ userId });
     if (!wallet) return res.status(404).json({ msg: "Wallet not found" });
 
+    // ✅ Find transaction
     const txn = wallet.transactions.id(txnId);
     if (!txn) return res.status(404).json({ msg: "Transaction not found" });
 
+    // ✅ Only allow pending transactions
     if (txn.status !== "pending") {
       return res.status(400).json({ msg: "Transaction already processed" });
     }
 
-    if (approve === true) {
+    // ✅ Approve or reject
+    if (approve) {
       txn.status = "approved";
-      wallet.balance += Number(txn.amount);
+      wallet.balance += Number(txn.amount); // Add to wallet balance
     } else {
       txn.status = "rejected";
     }
 
+    // ✅ Save wallet
     await wallet.save();
 
+    // ✅ Return success and updated info
     res.json({
       success: true,
+      balance: wallet.balance,
+      txnId: txn._id,
       status: txn.status,
-      balance: wallet.balance
     });
 
   } catch (err) {
@@ -807,6 +869,7 @@ exports.adminApproveDeposit = async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 };
+
 exports.getAllDeposits = async (req, res) => {
   try {
     const wallets = await Wallet.find()
@@ -848,110 +911,6 @@ exports.getAllDeposits = async (req, res) => {
 };
 
 
-exports.depositRequest = async (req, res) => {
-  try {
-    const { amount, utr } = req.body;
-    if (!amount || amount <= 0 || !utr)
-      return res.status(400).json({ msg: "Amount and UTR required" });
-
-    let screenshot = null;
-    if (req.file) screenshot = req.file.filename;
-
-    let wallet = await Wallet.findOne({ userId: req.user.id });
-    if (!wallet) wallet = await Wallet.create({ userId: req.user.id, balance: 0 });
-
-    wallet.transactions.push({
-      type: "deposit",
-      amount,
-      status: "pending",
-      utr,
-      screenshot
-    });
-
-    await wallet.save();
-    res.json({ success: true, msg: "Deposit request submitted, waiting for admin approval" });
-  } catch (err) {
-    console.error("depositRequest:", err);
-    res.status(500).json({ msg: "Server error" });
-  }
-};
-
-/* ======================================
-   ADMIN → UPDATE USER BALANCE
-====================================== */
-exports.adminApproveDeposit = async (req, res) => {
-  try {
-    if (!req.body) {
-      return res.status(400).json({ msg: "Request body missing" });
-    }
-
-    const { userId, txnId, approve } = req.body;
-
-    if (!userId || !txnId) {
-      return res.status(400).json({ msg: "userId and txnId required" });
-    }
-
-    let wallet = await Wallet.findOne({ userId });
-    if (!wallet) return res.status(404).json({ msg: "Wallet not found" });
-
-    const txn = wallet.transactions.id(txnId);
-    if (!txn) return res.status(404).json({ msg: "Transaction not found" });
-
-    if (txn.status !== "pending") {
-      return res.status(400).json({ msg: "Transaction already processed" });
-    }
-
-    if (approve) {
-      txn.status = "approved";
-      wallet.balance += txn.amount;
-    } else {
-      txn.status = "rejected";
-    }
-
-    await wallet.save();
-    res.json({ success: true, balance: wallet.balance, txn });
-  } catch (err) {
-    console.error("adminApproveDeposit:", err);
-    res.status(500).json({ msg: "Server error" });
-  }
-};
-
-
-exports.getAllDeposits = async (req, res) => {
-  try {
-    // Find all wallets and populate user info
-    const wallets = await Wallet.find()
-      .populate("userId", "name phone email")
-      .sort({ updatedAt: -1 });
-
-    const deposits = [];
-
-    wallets.forEach(wallet => {
-      wallet.transactions.forEach(txn => {
-        if (txn.type === "deposit") {
-          deposits.push({
-            _id: txn._id,
-            user: wallet.userId,
-            amount: txn.amount,
-            utr: txn.utr,
-            status: txn.status,
-            screenshot: txn.screenshot,
-            date: txn.createdAt
-          });
-        }
-      });
-    });
-
-    res.json({
-      success: true,
-      total: deposits.length,
-      deposits
-    });
-  } catch (err) {
-    console.error("getAllDeposits:", err);
-    res.status(500).json({ msg: "Server error" });
-  }
-};
 
 /* ======================================
    USER → REQUEST WITHDRAWAL
@@ -1407,3 +1366,31 @@ exports.referralRedirect = (req, res) => {
   });
 };
 
+// Example: Node.js + Express + Mongoose
+exports.approveDeposit = async (req, res) => {
+  const { userId, txnId, approve } = req.body;
+
+  try {
+    // Find the deposit by ID and user
+    const deposit = await Deposit.findOne({ _id: txnId, "user._id": userId });
+    if (!deposit) return res.status(404).json({ success: false, msg: "Deposit not found" });
+
+    // Update status permanently
+    deposit.status = approve ? "approved" : "rejected";
+    await deposit.save();
+
+    // Optionally, if approved, update user wallet
+    if (approve) {
+      const user = await User.findById(userId);
+      if (user) {
+        user.balance += deposit.amount;
+        await user.save();
+      }
+    }
+
+    return res.json({ success: true, msg: `Deposit ${approve ? "approved" : "rejected"}` });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, msg: "Server error" });
+  }
+};

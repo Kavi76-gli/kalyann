@@ -57,7 +57,7 @@ const transactionSchema = new mongoose.Schema({
     type: String,
     default: null
   },
-
+adminHidden: { type: Boolean, default: false },
   /* ========= GAME / COMMON ========= */
   meta: {
     betId: {
@@ -119,5 +119,6 @@ const walletSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
 
 module.exports = mongoose.model("Wallet", walletSchema);
