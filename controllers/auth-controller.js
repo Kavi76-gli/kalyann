@@ -496,10 +496,14 @@ exports.getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("-password");
 
-    if (!user) return res.status(404).json({ success: false, msg: "User not found" });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        msg: "User not found"
+      });
+    }
 
-    // Admin flag in profile
-    const dashboard = user.isAdmin ? "Admin Area" : "User Area";
+    const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
 
     res.json({
       success: true,
@@ -508,16 +512,26 @@ exports.getProfile = async (req, res) => {
         name: user.name || "Player",
         phone: user.phone,
         email: user.email,
+
+        // ✅ return filename
+        avatar: user.avatar || null,
+
+        // ✅ return full URL
         avatarUrl: user.avatar
-          ? `https://localhost:5000/uploads/avatars/${user.avatar}`
+          ? `${BASE_URL}/uploads/avatars/${user.avatar}`
           : null,
+
         isAdmin: user.isAdmin,
       },
-      dashboard,
+      dashboard: user.isAdmin ? "Admin Area" : "User Area",
     });
+
   } catch (err) {
     console.error("Profile error:", err);
-    res.status(500).json({ success: false, msg: "Server error" });
+    res.status(500).json({
+      success: false,
+      msg: "Server error"
+    });
   }
 };
 
@@ -631,19 +645,42 @@ exports.logout = async (req, res) => {
 // ======================
 // Upload Avatar
 // ======================
+ // ======================
+// Upload Avatar
+// ======================
 exports.uploadUserAvatar = async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ success: false, msg: "No file uploaded" });
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        msg: "No file uploaded"
+      });
+    }
 
-    await User.updateOne({ _id: req.user.id }, { $set: { avatar: req.file.filename } });
+    // Save filename in DB
+    await User.updateOne(
+      { _id: req.user.id },
+      { $set: { avatar: req.file.filename } }
+    );
 
-    const avatarUrl = `https://localhost:5000/uploads/avatars/${req.file.filename}`;
-    res.json({ success: true, msg: "Avatar uploaded successfully", avatarUrl });
+    const avatarUrl = `${process.env.BASE_URL || "http://localhost:5000"}/uploads/avatars/${req.file.filename}`;
+
+    res.json({
+      success: true,
+      msg: "Avatar uploaded successfully",
+      avatar: req.file.filename,
+      avatarUrl
+    });
+
   } catch (err) {
     console.error("Avatar upload error:", err);
-    res.status(500).json({ success: false, msg: "Server error" });
+    res.status(500).json({
+      success: false,
+      msg: "Server error"
+    });
   }
 };
+
 
 // ======================
 // Update Profile (including game UIDs)
@@ -887,7 +924,7 @@ exports.getAllDeposits = async (req, res) => {
             utr: txn.utr,
             status: txn.status,
             screenshot: txn.screenshot
-              ? `https://kalyan-2.onrender.com${txn.screenshot}`
+              ? `${process.env.BASE_URL || "http://localhost:5000"}${txn.screenshot}`
               : null,
             date: txn.createdAt
           });
