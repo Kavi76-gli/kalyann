@@ -2,7 +2,7 @@ const Match = require("../models/Match");
 
 const Bet = require("../models/bet");
 const Wallet = require("../models/wallet");
-
+const axios = require("axios");
 
 
 // ================= PAYOUT DEFAULT =================
@@ -756,10 +756,6 @@ exports.getSingleGame = async (req, res) => {
     res.status(500).json({ msg: "Server error" });
   }
 };
-
-
-
-
 
 
 

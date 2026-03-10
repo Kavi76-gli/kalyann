@@ -10,7 +10,7 @@ module.exports = async ({ to, subject, html }) => {
     {
       sender: {
         name: "Kalyan",
-        email: "no-reply@battlepurse.online"
+        email: "no-reply@kalyansattaking.online"
       },
       to: [{ email: to }],
       subject,

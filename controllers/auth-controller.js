@@ -503,7 +503,7 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
+    const BASE_URL = process.env.BASE_URL || "https://kalyann.onrender.com";
 
     res.json({
       success: true,
@@ -663,7 +663,7 @@ exports.uploadUserAvatar = async (req, res) => {
       { $set: { avatar: req.file.filename } }
     );
 
-    const avatarUrl = `${process.env.BASE_URL || "http://localhost:5000"}/uploads/avatars/${req.file.filename}`;
+    const avatarUrl = `${process.env.BASE_URL || "https://kalyann.onrender.com"}/uploads/avatars/${req.file.filename}`;
 
     res.json({
       success: true,
@@ -924,7 +924,7 @@ exports.getAllDeposits = async (req, res) => {
             utr: txn.utr,
             status: txn.status,
             screenshot: txn.screenshot
-              ? `${process.env.BASE_URL || "http://localhost:5000"}${txn.screenshot}`
+              ? `${process.env.BASE_URL || "https://kalyann.onrender.com"}${txn.screenshot}`
               : null,
             date: txn.createdAt
           });
