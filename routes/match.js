@@ -10,7 +10,8 @@ const {
    resetMatchResult,
   deleteMatch,
   getSingleGame,
-   resetAllMatchResults
+   resetAllMatchResults,
+   addTokens
 } = require("../controllers/match-controller");
 
 const { auth, adminOnly } = require("../middleware/admin-auth-middleware");
@@ -51,5 +52,5 @@ router.get("/gamezone/:id", auth, getSingleGame);
    ADMIN → DELETE MATCH
 ====================================== */
 router.delete("/admin/match/:matchId", auth, adminOnly, deleteMatch);
-
+router.post('/admin/add-tokens', auth, adminOnly, addTokens);
 module.exports = router;

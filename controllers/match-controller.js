@@ -757,10 +757,45 @@ exports.getSingleGame = async (req, res) => {
   }
 };
 
+// adminController.js
 
 
+// controllers/match-controller.js
+// ======================
+// Add tokens to user wallet (Admin)
+// ======================
+// controllers/match-controller.js
+// controllers/adminController.js
+// controllers/adminController.js
 
 
+exports.addTokens = async (req, res) => {
+  try {
+    const { userId, amount } = req.body;
 
+    if (!userId || !amount || Number(amount) <= 0) {
+      return res.status(400).json({ success: false, msg: "Invalid input" });
+    }
 
+    // Find wallet for the user
+    let wallet = await Wallet.findOne({ userId });
 
+    // If wallet does not exist, create it
+    if (!wallet) {
+      wallet = await Wallet.create({ userId, balance: 0 });
+    }
+
+    // Add tokens using $inc
+    wallet.balance += Number(amount); // update in memory
+    await wallet.save(); // save to DB
+
+    res.json({
+      success: true,
+      msg: `Added ${amount} tokens to user's wallet`,
+      balance: wallet.balance, // updated balance
+    });
+  } catch (err) {
+    console.error("Add tokens error:", err);
+    res.status(500).json({ success: false, msg: "Server error" });
+  }
+};
