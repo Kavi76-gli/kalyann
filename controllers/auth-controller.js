@@ -96,11 +96,18 @@ exports.registerSendOtp = async (req, res) => {
     });
 
     // ✅ Send email OTP
-    await sendEmail({
-      to: email,
-      subject: "KALYAN MASTER Registration OTP",
-      html: `<h2>Hello ${name}, your OTP is: <b>${otp}</b></h2>`
-    });
+    // send email
+await sendEmail({
+  to: email,
+  subject: "007 Kalyan Registration OTP",
+  html: `
+  <h2>Hello ${name}</h2>
+  <p>Your OTP is:</p>
+  <h1>${otp}</h1>
+  <p>This OTP will expire in 5 minutes.</p>
+  <p><b>Do not share this code with anyone.</b></p>
+  `
+});
 
     return res.json({ success: true, msg: "OTP sent to your email" });
 
