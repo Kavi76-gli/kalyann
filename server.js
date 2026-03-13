@@ -21,6 +21,16 @@ app.use(cors({
 
 
 
+const { fetchResultsFromOtherApp } = require("./services/resultFetcher");
+
+cron.schedule("* * * * *", async () => {
+
+  console.log("Checking result from other app...");
+
+  await fetchResultsFromOtherApp();
+
+});
+
 // ⏰ Run daily at 4:01 AM
 cron.schedule("1 4 * * *", async () => {
   console.log("🔁 Running daily game replay...");
@@ -51,7 +61,7 @@ app.use("/api/match", require("./routes/match"));
 app.use("/api/admin", require("./routes/adminBidroutes"));
 app.use("/api/gali", require("./routes/gali"));   // ✅ GALI DISAWAR ROUTES
 app.use("/api/gali-bet", require("./routes/gali-bet"));
-require("./services/dpbossSync");
+
 // MongoDB + Server Start
 const PORT = process.env.PORT || 5000;
 
