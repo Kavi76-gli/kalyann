@@ -3,6 +3,7 @@ const Match = require("../models/Match");
 const { declareOpenResult, declareCloseResult } = require("../controllers/match-controller");
 
 async function fetchResultsFromOtherApp() {
+
   try {
 
     console.log("🔍 Fetching results from other app...");
@@ -11,74 +12,84 @@ async function fetchResultsFromOtherApp() {
       "https://kalyan-2.onrender.com/api/match/gamezone",
       {
         headers: {
-          Authorization: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5NjVlZmZjNDM5NTU0MWJhZjljZGFlZiIsImlzQWRtaW4iOnRydWUsImlhdCI6MTc3MzM5MDE3MiwiZXhwIjoxODA0OTI2MTcyfQ.Mv9VAgMALmJJuWFztZzN0-7V8RRtr6APaDq2A3uTyhs"
+          Authorization: `Bearer ${process.env.RESULT_API_TOKEN}`
         }
       }
     );
 
-    if (!res.data.success) {
-      console.log("⚠ API returned success=false");
+    if (!res.data || !res.data.success) {
+      console.log("⚠ API response invalid");
       return;
     }
 
-    // ⚠ your API returns games
     const results = res.data.games;
 
     if (!results || results.length === 0) {
-      console.log("⚠ No results received");
+      console.log("⚠ No games returned from API");
       return;
     }
 
-    const matches = await Match.find();
+    const matches = await Match.find({ isActive: true });
 
     for (const match of matches) {
 
-      const result = results.find(
-        r => r.gameName?.toLowerCase() === match.gameName?.toLowerCase()
+      const result = results.find(r =>
+        r.gameName?.toLowerCase() === match.gameName?.toLowerCase() &&
+        r.openTime === match.openTime &&
+        r.closeTime === match.closeTime
       );
 
-      if (!result) continue;
+      if (!result) {
+        console.log(`❌ No match for ${match.gameName}`);
+        continue;
+      }
 
-      // =================
+      console.log(`🎯 Matched game: ${match.gameName}`);
+
+      // ==========================
       // AUTO OPEN RESULT
-      // =================
+      // ==========================
 
       if (
-        result.openResult?.single &&
-        (!match.openResult || match.openResult.single === "***")
+        result.openResult?.single !== null &&
+        result.openResult?.single !== undefined &&
+        (!match.openResult || match.openResult.single === null)
       ) {
 
-        console.log("✅ Auto OPEN result:", match.gameName);
+        console.log(`🤖 AUTO OPEN RESULT: ${match.gameName}`);
 
         await declareOpenResult(
           {
             body: {
               matchId: match._id,
               panel: result.openResult.panel,
-              single: result.openResult.single
+              single: result.openResult.single,
+              source: "auto"
             }
           },
           dummyRes()
         );
       }
 
-      // =================
+      // ==========================
       // AUTO CLOSE RESULT
-      // =================
+      // ==========================
 
       if (
-        result.closeResult?.single &&
-        (!match.closeResult || match.closeResult.single === "***")
+        result.closeResult?.single !== null &&
+        result.closeResult?.single !== undefined &&
+        (!match.closeResult || match.closeResult.single === null)
       ) {
 
-        console.log("✅ Auto CLOSE result:", match.gameName);
+        console.log(`🤖 AUTO CLOSE RESULT: ${match.gameName}`);
 
         await declareCloseResult(
           {
             body: {
               matchId: match._id,
               panel: result.closeResult.panel,
-              single: result.closeResult.single
+              single: result.closeResult.single,
+              source: "auto"
             }
           },
           dummyRes()
@@ -90,15 +101,14 @@ async function fetchResultsFromOtherApp() {
   } catch (err) {
 
     if (err.response) {
-      console.log("❌ Fetch result error:", err.response.status);
+      console.log("❌ API error:", err.response.status);
     } else {
-      console.log("❌ Fetch result error:", err.message);
+      console.log("❌ Error:", err.message);
     }
 
   }
 }
 
-// Fake response for controller calls
 function dummyRes() {
   return {
     status: () => ({ json: () => {} }),

@@ -1,61 +1,93 @@
 const mongoose = require("mongoose");
 
+const resultSchema = new mongoose.Schema(
+  {
+    panel: {
+      type: String,
+      default: null
+    },
+    single: {
+      type: Number,
+      default: null
+    },
+
+    // Track who declared result
+    declaredBy: {
+      type: String,
+      enum: ["auto", "admin"],
+      default: null
+    },
+
+    declaredAt: {
+      type: Date,
+      default: null
+    }
+  },
+  { _id: false }
+);
+
 const matchSchema = new mongoose.Schema(
   {
     /* ================================
        🎮 GAME INFO
     ================================ */
+
     gameName: {
       type: String,
-      required: true
+      required: true,
+      trim: true
     },
 
     gameCode: {
       type: String,
       required: true,
       unique: true,
-      index: true
+      index: true,
+      uppercase: true,
+      trim: true
     },
 
     /* ================================
-       ⏰ TIMINGS (HH:mm strings)
-       Supports cross-midnight
+       ⏰ TIMINGS (HH:mm format)
+       Supports cross-midnight games
     ================================ */
+
     openTime: {
-      type: String, // "22:00"
+      type: String,
       required: true,
-      match: /^([01]\d|2[0-3]):([0-5]\d)$/ // HH:mm validation
+      match: /^([01]\d|2[0-3]):([0-5]\d)$/
     },
 
     closeTime: {
-      type: String, // "01:00"
+      type: String,
       required: true,
       match: /^([01]\d|2[0-3]):([0-5]\d)$/
     },
 
     resultTime: {
-      type: String, // "03:00"
+      type: String,
       required: true,
       match: /^([01]\d|2[0-3]):([0-5]\d)$/
     },
 
     /* ================================
        🎯 RESULTS
-       Reset to "***" daily automatically
     ================================ */
- openResult: {
-  panel: { type: String, default: null },
-  single: { type: Number, default: null } // use Number if single is numeric
-},
-closeResult: {
-  panel: { type: String, default: null },
-  single: { type: Number, default: null }
-},
 
+    openResult: {
+      type: resultSchema,
+      default: () => ({})
+    },
+
+    closeResult: {
+      type: resultSchema,
+      default: () => ({})
+    },
 
     /* ================================
        🎲 ALLOWED BET TYPES
     ================================ */
+
     allowedTypes: {
       single: { type: Boolean, default: true },
       jodi: { type: Boolean, default: true },
@@ -67,8 +99,9 @@ closeResult: {
     },
 
     /* ================================
-       💰 PAYOUT MULTIPLIERS (decimals allowed)
+       💰 PAYOUT MULTIPLIERS
     ================================ */
+
     payout: {
       single: { type: Number, default: 9 },
       jodi: { type: Number, default: 90 },
@@ -82,12 +115,21 @@ closeResult: {
     /* ================================
        💵 BET LIMITS
     ================================ */
-    minBet: { type: Number, default: 10 },
-    maxBet: { type: Number, default: 10000 },
+
+    minBet: {
+      type: Number,
+      default: 10
+    },
+
+    maxBet: {
+      type: Number,
+      default: 10000
+    },
 
     /* ================================
        📊 GAME STATUS
     ================================ */
+
     status: {
       type: String,
       enum: [
@@ -97,12 +139,14 @@ closeResult: {
         "result_declared",
         "completed"
       ],
-      default: "upcoming"
+      default: "upcoming",
+      index: true
     },
 
     /* ================================
        👨‍💼 ADMIN INFO
     ================================ */
+
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User"
@@ -115,26 +159,59 @@ closeResult: {
     },
 
     /* ================================
-       🔁 DAILY REPLAY
-       Game repeats automatically daily
+       🔁 DAILY GAME
     ================================ */
+
     isDailyGame: {
       type: Boolean,
       default: true
     },
 
     /* ================================
-       🔐 PAYOUT SAFETY FLAGS
+       🔐 PAYOUT SAFETY
     ================================ */
-    openPayoutDone: { type: Boolean, default: false },
-    closePayoutDone: { type: Boolean, default: false },
+
+    openPayoutDone: {
+      type: Boolean,
+      default: false
+    },
+
+    closePayoutDone: {
+      type: Boolean,
+      default: false
+    },
 
     /* ================================
        🧠 GENERAL FLAGS
     ================================ */
-    isActive: { type: Boolean, default: true }
+
+    isActive: {
+      type: Boolean,
+      default: true,
+      index: true
+    }
   },
-  { timestamps: true }
+  {
+    timestamps: true
+  }
 );
+
+/* ================================
+   ⚡ INDEXES FOR FAST RESULT SYNC
+================================ */
+
+matchSchema.index({ gameName: 1, openTime: 1, closeTime: 1 });
+
+/* ================================
+   🔄 DAILY RESULT RESET HELPER
+================================ */
+
+matchSchema.methods.resetDailyResults = function () {
+  this.openResult = { panel: null, single: null, declaredBy: null };
+  this.closeResult = { panel: null, single: null, declaredBy: null };
+  this.openPayoutDone = false;
+  this.closePayoutDone = false;
+  this.status = "upcoming";
+};
 
 module.exports = mongoose.model("Match", matchSchema);
